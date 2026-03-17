@@ -1,7 +1,7 @@
-import multer from "multer";
-
-const upload = multer({ dest: "uploads/" });
 import express from "express";
+import multer from "multer"; 
+
+const upload = multer({ storage: multer.memoryStorage() });
 import {
   AddMod,
   getAllDownload,
@@ -63,7 +63,23 @@ router.get("/secretebase/downloadmods/:id", getDownloadById)
   
 router.get('/secretebase/mods/downloadmods/:mods_id', getModDownloadByModId)
 
-router.put("/secretebase/downloadmods/:id", upload.single("file"), updateModDownload);
+router.put("/secretebase/downloadmods/:id", upload.single("file"), async (req, res, next) => {
+  try {
+    // Call ftpService before controller
+    if (req.file) {
+      await uploadBuffer({
+        fileFormate: req.body.file_format || "misc",
+        titleForPath: req.body.title_for_path || "uploads",
+        fileName: req.file.originalname,
+        buffer: req.file.buffer
+      });
+    }
+    // Pass to original controller
+    return updateModDownload(req, res, next);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 router.get("/secretebase/categories/count", async (req, res) => {
