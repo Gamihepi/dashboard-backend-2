@@ -48,7 +48,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 /* -------------------- Static -------------------- */
-app.use("/uploads", express.static(path.join(process.cwd(), uploadRoot)));
+if (process.env.VERCEL || !env.localUploadBase) {
+  // No static on Vercel/serverless (SFTP uploads)
+} else {
+  app.use("/uploads", express.static(path.join(process.cwd(), uploadRoot)));
+}
 
 /* -------------------- Health + Root -------------------- */
 
