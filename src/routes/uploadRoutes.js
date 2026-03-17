@@ -1,11 +1,11 @@
 import express from "express";
 import multer from "multer";
-import { connectSFTP } from "../ftp.js";
-import fs from "fs";
-import db from '../db.js'
+import db from '../db.js';
+import { uploadBuffer } from "../services/ftpService.js";
+
 
 const router = express.Router();
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.put("/secretebase/:id", upload.single("file"), async (req, res) => {
   try {
@@ -34,20 +34,12 @@ router.put("/secretebase/:id", upload.single("file"), async (req, res) => {
 
     // 2️⃣ Only upload if a new file was provided
     if (req.file) {
-      const sftp = await connectSFTP();
-
-      // Always use OLD folder and OLD filename
-      const remoteDir = `/public_html/snap_tech_modsforminecraft/upload/data/${oldData.file_format}/${oldData.title_for_path}`;
-      await sftp.mkdir(remoteDir, true);
-
-      const remoteFilePath = `${remoteDir}/${oldData.url}`; // overwrite old file
-      console.log("Overwriting SFTP file:", remoteFilePath);
-
-      await sftp.put(req.file.path, remoteFilePath); // replace
-      await sftp.end();
-
-      // remove temp local file
-      fs.unlinkSync(req.file.path);
+      await uploadBuffer({
+        fileFormate: oldData.file_format,
+        titleForPath: oldData.title_for_path,
+        fileName: oldData.url,
+        buffer: req.file.buffer
+      });
     }
 
     // 3️⃣ Update DB metadata (do NOT change url)
@@ -78,20 +70,12 @@ router.post("/secretebase", upload.single("image"), async (req, res) => {
       return res.status(400).json({ error: "Missing folder data" });
     }
 
-    const sftp = await connectSFTP();
-
-    // 1️⃣ Create folder if it doesn't exist
-    const remoteDir = `/public_html/snap_tech_modsforminecraft/upload/data/${file_format}/${title_for_path}`;
-    await sftp.mkdir(remoteDir, true); // 'true' = recursive creation
-
-    // 2️⃣ Full remote file path including filename
-    const remoteFile = `${remoteDir}/${req.file.originalname}`;
-    await sftp.put(req.file.path, remoteFile);
-
-    await sftp.end();
-
-    // delete local temp file
-    fs.unlinkSync(req.file.path);
+    await uploadBuffer({
+      fileFormate: file_format,
+      titleForPath: title_for_path,
+      fileName: req.file.originalname,
+      buffer: req.file.buffer
+    });
 
     res.json({
       message: "File uploaded successfully",
@@ -138,14 +122,9 @@ router.post("/secretebase/file", upload.array("files"), async (req, res) => {
       ? req.body.titles
       : [req.body.titles];
 
-    const sftp = await connectSFTP();
-    const remoteDir = `/public_html/snap_tech_modsforminecraft/upload/data/${file_format}/${title_for_path}`;
-    await sftp.mkdir(remoteDir, true);
-
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const title = titles[i] || file.originalname;
-      // const size = (file.size / (1024 * 1024)).toFixed(2) + "MB";
 
       let size;
 
@@ -158,9 +137,14 @@ router.post("/secretebase/file", upload.array("files"), async (req, res) => {
         size = (kbSize < 0.01 ? 0.01 : kbSize).toFixed(2) + " KB";
       }
 
-      const remoteFilePath = `${remoteDir}/${file.originalname}`;
-      await sftp.put(file.path, remoteFilePath);
-      fs.unlinkSync(file.path);
+      await uploadBuffer({
+        fileFormate: file_format,
+        category,
+        subCategory: sub_category,
+        titleForPath: title_for_path,
+        fileName: file.originalname,
+        buffer: file.buffer
+      });
 
       await new Promise((resolve, reject) => {
         db.query(
@@ -173,8 +157,6 @@ router.post("/secretebase/file", upload.array("files"), async (req, res) => {
         );
       });
     }
-
-    await sftp.end();
 
     res.json({ message: "Files uploaded successfully" });
 
